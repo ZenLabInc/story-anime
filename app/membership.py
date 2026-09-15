@@ -2,6 +2,7 @@
 from contextlib import nullcontext
 import datetime
 import json
+import os
 import time
 from app import studio as s, accounts
 from scripts.cost_model import load_config
@@ -24,6 +25,7 @@ def init():
         db.execute('UPDATE consumption SET cost_usd=cost/?,usd_jpy=? WHERE cost_usd IS NULL',(USD_JPY,USD_JPY))
 
 def plan(db,user):
+    if os.environ.get('YOURSTORY_LOCAL')=='1':return 'free',CONFIG['free']
     row=db.execute('SELECT * FROM memberships WHERE user=?',(user,)).fetchone()
     name=row['plan'] if row and (row['until'] is None or row['until']>time.time()) else 'free'
     return name,CONFIG[name]
@@ -43,6 +45,19 @@ def status(user):
         events=[dict(r) for r in db.execute('SELECT kind,status,tokens,input_tokens,output_tokens,cost,model,created FROM consumption WHERE user=? ORDER BY created DESC LIMIT 30',(user,))]
     return {'plan':name,'limits':p,'used':dict(used,images=images),'period':cycle,'events':events,'plans':{k:CONFIG[k] for k in ['free','plus','pro']}}
 
+def token_usage(user):
+    """Report provider token counts only, never reservation bounds or prices."""
+    with s.transaction() as db:
+        rows=db.execute("SELECT kind,model,status,input_tokens,output_tokens,created FROM consumption WHERE user=? AND status!='released' ORDER BY created DESC",(user,)).fetchall()
+    records=[]
+    for row in rows:
+        record=dict(row)
+        known=record['status']!='reserved' and all(record[k] is not None for k in ['input_tokens','output_tokens'])
+        record['total_tokens']=record['input_tokens']+record['output_tokens'] if known else None
+        if not known:record.update(input_tokens=None,output_tokens=None)
+        records.append(record)
+    return {'input_tokens':sum(r['input_tokens'] or 0 for r in records),'output_tokens':sum(r['output_tokens'] or 0 for r in records),'total_tokens':sum(r['total_tokens'] or 0 for r in records),'unreported_calls':sum(r['total_tokens'] is None for r in records),'records':records[:100]}
+
 def project_allowed(user,connection=None):
     with (nullcontext(connection) if connection is not None else s.transaction()) as db:
         _,p=plan(db,user)
@@ -60,7 +75,7 @@ def reserve(work,kind,token_bound,cap,model,credential=False):
         user=row[0]
         account=db.execute('SELECT terms_version,privacy_version FROM accounts WHERE user=? AND deleted_at IS NULL',(user,)).fetchone()
         if not account:raise PermissionError('生成にはログインが必要です。')
-        if account['terms_version']!=accounts.TERMS_VERSION or account['privacy_version']!=accounts.PRIVACY_VERSION:raise PermissionError('制作を続ける前に、更新した利用規約・プライバシーポリシーをご確認ください。')
+        if os.environ.get('YOURSTORY_LOCAL')!='1' and (account['terms_version']!=accounts.TERMS_VERSION or account['privacy_version']!=accounts.PRIVACY_VERSION):raise PermissionError('制作を続ける前に、更新した利用規約・プライバシーポリシーをご確認ください。')
         name,p=plan(db,user);used=totals(db,user)
         payer='user' if name=='free' else 'operator'
         token=user_keys.read(db,user) if payer=='user' else (gemini.key() if credential else None)

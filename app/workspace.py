@@ -74,7 +74,7 @@ def approve_character(c, persona=False):
     if c.get('name_state') in ['unasked','pending'] or c['name']=='新しいキャラ':raise ValueError('先にキャラの名前を教えてください。')
     if persona and (c.get('visual_state')!='confirmed' or c.get('persona_state')!='ready'):raise ValueError('先に性格・話し方の案を相談してください。')
     profile={'name':c['name'],'appearance':c.get('appearance',c['description']),
-             'personality':c.get('personality','') if persona else '', 'speech':c.get('speech','') if persona else ''}
+             'personality':c.get('personality','') if persona else '', 'speech':c.get('speech','') if persona else '', 'background':c.get('background','')}
     description=profile['appearance']+('\n性格：'+profile['personality']+'\n話し方：'+profile['speech'] if persona else '')
     v={'id':s.uid(),'name':c['name'],'description':description,'asset':copy.deepcopy(c['asset']),'profile':profile,'art_style':copy.deepcopy(c.get('art_style'))}
     c['versions'].append(v);c['approved']=v['id'];c['visual_state']='confirmed'
@@ -366,7 +366,7 @@ def generate(user,b):
         p=load(db,user,b['id'],q['revision'])
         if time.time()>q['expires']:raise ValueError('見積もりの有効期限が切れました。')
         if q['kind']=='scene':
-            for i in q['panels']:manga.validate_dialogue(item(p,'scenes',q['target'])['panels'][i]['text'])
+            for i in q['panels']:manga.dialogues(item(p,'scenes',q['target'])['panels'][i])
         if not gemini.ENABLED:raise ValueError('実画像生成には --gemini 起動が必要です。')
         if membership.ENFORCE:membership.check_images(user,len(q['panels']),db)
         budget=gemini.budget()
@@ -399,7 +399,7 @@ def generate(user,b):
                 shot={**panel,'expression':'シーンの指示に従う'}
                 meta=gemini.image(p['id'],manga.art_prompt(work,shot)+'\nReference rows follow character order, each row front/side/back.',raw,refpath,aspect_ratio=(publication.spec(scene) or {}).get('panel_aspect',(publication.spec(scene) or {}).get('aspect','16:9')))
                 meta['geometry']=art_direction.normalize_file(raw,publication.panel_size(scene))
-                image=dest/'panel.png';manga.letter(Image.open(raw),panel['text'],panel['bubble_side'],publication.panel_size(scene)).save(image)
+                image=dest/'panel.png';manga.letter_panel(Image.open(raw),panel,publication.panel_size(scene)).save(image)
                 panel['asset']={'raw':relative(raw),'file':relative(image),'api':meta}
                 # Save each paid result before the next request; partial success is recoverable.
                 with s.transaction() as db:
@@ -410,10 +410,11 @@ def generate(user,b):
                     fresh=s.get_work(db,user,p['id']);item(fresh,'scenes',scene['id'])['output']=output;s.put(db,fresh)
         with s.transaction() as db:
             p=s.get_work(db,user,p['id']);p['quotes'][q['id']]['status']='done';p['busy']=None;p['error']=None
-            reply=f'{len(q["panels"])}枚を生成しました。'
-            if q['kind']=='character' and item(p,'characters',q['target']).get('asset') and item(p,'characters',q['target']).get('name_state')=='pending':reply='三面図ができました。このキャラの名前を教えてください。'
+            reply=q.get('completion_message') or generation_next_step(p,q)
             history(p,q['target'],'画像生成',reply)
             p['chats'][-1]['images']=([item(p,'characters',q['target'])['asset']['sheet']] if q['kind']=='character' and item(p,'characters',q['target']).get('asset') else [item(p,'characters',q['target'])['view_assets'][name]['file'] for name in ('front','side','back') if name in item(p,'characters',q['target']).get('view_assets',{})] if q['kind']=='character' else [item(p,'scenes',q['target'])['panels'][i]['asset']['file'] for i in q['panels']])
+            from app.confirmations import attach
+            attach(p,q['target'])
             from app import metrics
             metrics.track_conn(db, user, 'generation_completed', p['id'], {
                 'kind':q['kind'], 'image_count':len(q['panels']), 'status':'succeeded',
@@ -421,6 +422,25 @@ def generate(user,b):
             return save(db,p)
     except Exception as error:
         fail(user,p['id'],token,str(error));raise
+
+def scene_preview_images(scene):
+    # Shorts output is only the cover frame; the conversation needs every panel.
+    if scene.get('output') and (scene.get('publication') or {}).get('preset')!='shorts':
+        return [scene['output']]
+    return [panel['asset']['file'] for panel in scene['panels'] if panel.get('asset')]
+
+
+def generation_next_step(p,q):
+    """Fallback for old clients/quotes; the agent normally writes this message."""
+    if q['kind']=='character':
+        c=item(p,'characters',q['target'])
+        if not c.get('asset'):
+            return '正面の見た目を確認してください。この見た目でOKなら、残りの横面・背面をまとめて生成します。変えたい部分があれば教えてください。'
+        if c.get('name_state')=='pending':
+            return '三面図ができました。このキャラの名前を教えてください。見た目を修正したい場合も、このまま話してください。'
+        return '三面図ができました。この見た目と設定でよいか確認してください。OKか、変えたい部分を教えてください。'
+    return '漫画の画像ができました。コマの内容とセリフを確認し、OKか、直したいコマと変更内容を教えてください。確定後は続きを作るか、画像・動画として書き出せます。'
+
 
 def assemble(p,scene):
     if publication.spec(scene):

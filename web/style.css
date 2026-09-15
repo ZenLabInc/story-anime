@@ -141,3 +141,11 @@ nav .completed-scenes a.child:before{left:33px}
 nav .completed-scenes a.child span{min-width:0;overflow-wrap:anywhere}
 
 #gemini-key-form + button{margin-top:12px}
+
+#help-toggle{margin-left:auto;flex-shrink:0;color:var(--accent-deep);font-size:12px}
+.usage-guide h2{font-size:18px}.usage-example{padding:14px 0;border-top:1px solid var(--line)}
+.usage-example h3{font-size:14px;margin:0 0 8px}.usage-example button{text-align:left;white-space:normal;line-height:1.7;width:100%;padding:10px 12px;background:#f3effc;color:#514174;border:1px solid #e4dcf7;border-radius:10px;overflow-wrap:anywhere}
+.usage-example button:hover{background:#eae2fa}.usage-example p{font-size:12px;margin:6px 0 0}
+@media(max-width:1199px){.usage-guide{max-height:260px;overflow:auto;margin-bottom:24px}}
+
+.slide-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0}.slide-controls button{min-width:44px;min-height:44px}.slide-image{height:360px;display:grid;place-items:center;background:#f7f4fb;border-radius:10px;margin-top:16px}.slide-image .page{max-width:100%;max-height:360px;width:auto;object-fit:contain}.scene-slideshow>a{display:inline-flex;align-items:center;gap:6px;font-size:12px}

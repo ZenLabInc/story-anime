@@ -2,7 +2,7 @@
 let catalog={projects:[],layouts:{}}, project=null, section='home', target=null, busy=false;
 const expanded=new Set();
 const expandedSceneLists=new Map();
-let accountState=null, loginChallenge=null, inspecting=null, lastChatRender=null, projectMenu=null;
+let accountState=null, loginChallenge=null, inspecting=null, lastChatRender=null, projectMenu=null, helpOpen=true;
 const visualState=c=>c.visual_state||(c.approved?'confirmed':'interview');
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,7 +13,7 @@ const actionIcons={'delete-project':'trash-2','create':'sparkles','open':'book-o
 const btn=(label,op,attrs='',cls='')=>`<button data-op="${op}" ${attrs} class="${cls}">${icon(actionIcons[op])}<span class="button-label">${label}</span></button>`;
 document.querySelectorAll('[data-icon]').forEach(el=>{el.innerHTML=icon(el.dataset.icon);});
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json','X-Story-Anime':'local'},body:JSON.stringify(body)}:{});const x=await r.json();if(!r.ok){if(r.status===403&&x.error?.includes('ログイン'))location.assign('/login?next='+encodeURIComponent(location.pathname));throw Error(x.error||'通信できませんでした。');}return x;}
-async function refresh(){[catalog,accountState]=await Promise.all([api('/api/projects'),api('/api/account')]);$('#account-nav').title='アカウントとプラン';$('#account-label').textContent=accountState.account?accountState.membership.limits.label+' · '+(accountState.account.display_name||'ユーザー名を登録'):'ログイン・プラン';tree();}
+async function refresh(){[catalog,accountState]=await Promise.all([api('/api/projects'),api('/api/account')]);$('#account-nav').title=accountState.local?'設定・トークン使用量':'アカウントとプラン';$('#account-label').textContent=accountState.local?'設定':accountState.account?accountState.membership.limits.label+' · '+(accountState.account.display_name||'ユーザー名を登録'):'ログイン・プラン';tree();}
 async function run(fn){if(busy)return;busy=true;$('#error').textContent='';document.querySelectorAll('button:not(.shell-control)').forEach(x=>x.disabled=true);$('#send').innerHTML=icon('loader-circle');window.dispatchEvent(new Event('yourstory:busy'));try{await fn();await refresh();render();}catch(e){$('#error').textContent=e.message;if(e.message.includes('ログイン'))section='account';if(project){try{project=await api('/api/work/'+project.id);}catch{} }try{await refresh();}catch{}render();}finally{busy=false;document.querySelectorAll('button').forEach(x=>x.disabled=false);$('#send').innerHTML=icon('arrow-up');window.dispatchEvent(new Event('yourstory:busy'));if(queuedNavigation){const next=queuedNavigation;queuedNavigation=null;navigate(next.url,next.replace);}}}
 function heading(k,title,desc=''){return `<p class="eyebrow">${k}</p><h1>${esc(title)}</h1>${desc?`<p class="lead">${esc(desc)}</p>`:''}`;}
 function assistantMessage(text){return `<div class="message assistant"><div class="markdown">${YourStoryMarkdown.render(text)}</div></div>`;}
@@ -30,11 +30,39 @@ function tree(){let html='';for(const p of catalog.projects){const active=projec
  html+=`<button class="child scene-group-toggle shell-control" data-op="toggle-scenes" data-id="${p.id}" aria-expanded="${isOpen}" aria-controls="completed-scenes-${p.id}">${icon(isOpen?'chevron-down':'chevron-right')}<span>完成したコマ</span><small>${scenes.length}シーン</small></button><div id="completed-scenes-${p.id}" class="completed-scenes" ${isOpen?'':'hidden'}>${scenes.map(s=>`<a class="child ${inspecting===s.id?'selected':''}" href="${routeURL(s.id)}" ${inspecting===s.id?'aria-current="page"':''}>${icon('panels-top-left')}<span>${esc(s.title)}</span></a>`).join('')}</div>`;
  }
  }}if($('#tree').innerHTML!==html)$('#tree').innerHTML=html;}
+const usageExamples=[
+ ['動画をダウンロード','完成したシーンを順番に、YouTube Shorts用の無音MP4にしてダウンロードしたい。','1コマずつ切り替わる無音動画です。'],
+ ['画像をダウンロード','完成した漫画をPNGでダウンロードしたい。','縦読み画像やZIPでの書き出しも頼めます。'],
+ ['コマを修正','1コマ目だけ表情を笑顔にして。他のコマはそのまま残して。','変えたいコマと内容を伝えます。'],
+ ['セリフを変更','2コマ目のセリフを「ここから始めよう」に変えて。絵はそのままで。','絵を作り直さず文字を変更できます。'],
+ ['続きをつくる','このシーンでOK。続きの4コマを一緒に考えて。','確定した設定や人物を引き継ぎます。'],
+ ['キャラ・世界観を追加','主人公のライバルを追加したい。見た目と性格から相談しよう。','画風や世界観の変更も、このチャットで。']
+];
+function usageGuide(){return `<section class="asset-reader usage-guide" aria-label="使い方と例文"><div class="row"><h2>できること</h2>${btn('閉じる','toggle-help')}</div><p class="muted">例文を選ぶと入力欄に入ります。自由に直して送ってください。</p>${usageExamples.map(([title,prompt,note],i)=>`<section class="usage-example"><h3>${esc(title)}</h3><button type="button" data-op="use-example" data-index="${i}" ${busy?'disabled':''}>${esc(prompt)}</button><p class="muted">${esc(note)}</p></section>`).join('')}</section>`;}
+
+const sceneSlideIndex=new Map();
+let followChatBottom=false;
+function scrollChatBottom(){requestAnimationFrame(()=>{if(!followChatBottom)return;window.scrollTo(0,document.documentElement.scrollHeight);requestAnimationFrame(()=>{if(followChatBottom)window.scrollTo(0,document.documentElement.scrollHeight);});});}
+function pinChatBottom(){followChatBottom=true;scrollChatBottom();}
+new ResizeObserver(()=>{if(followChatBottom)scrollChatBottom();}).observe(document.querySelector('#content'));
+window.addEventListener('wheel',()=>{followChatBottom=false;},{passive:true});
+window.addEventListener('touchstart',()=>{followChatBottom=false;},{passive:true});
+document.addEventListener('keydown',e=>{if(['PageUp','Home','ArrowUp'].includes(e.key))followChatBottom=false;});
+document.addEventListener('load',e=>{if(followChatBottom&&e.target.matches?.('.conversation img'))scrollChatBottom();},true);
+function sceneSlideshow(scene){
+ const panels=scene.panels.map((p,i)=>({path:p.asset?.file,label:`${i+1}コマ目`})).filter(p=>p.path);
+ if(!panels.length)return scene.output?image(scene.output,scene.title,'page'):'';
+ const index=Math.min(sceneSlideIndex.get(scene.id)||0,panels.length-1),slide=panels[index];
+ return `<div class="scene-slideshow" aria-label="完成したコマのスライド"><div class="slide-image">${image(slide.path,slide.label,'page')}</div><div class="slide-controls">${panels.length>1?`<button type="button" class="shell-control" data-op="scene-slide" data-step="-1" aria-label="前のコマ">←</button>`:''}<span aria-live="polite">${slide.label} · ${index+1} / ${panels.length}</span>${panels.length>1?`<button type="button" class="shell-control" data-op="scene-slide" data-step="1" aria-label="次のコマ">→</button>`:''}</div><a href="${file(slide.path)}" download="panel-${index+1}.png">${icon('download')}このコマを保存</a></div>`;
+}
+
+function renderConfirmation(message){const c=message.confirmation;if(!c)return '';if(c.status==='accepted')return '<p class="muted">確定済み</p>';if(c.status!=='pending')return '';return `<div class="confirmation-actions">${btn(c.label,'confirm-proposal',`data-message="${esc(message.id)}"`,'primary')}</div>`;}
+
 function assetReader(){if(!inspecting)return '';let title,html;
  if(inspecting==='world'){title='世界観';html=`<p class="text-block">${esc(project.world.text)}</p><small>確定版 v${project.world.revision}</small>`;}
  else {const c=project.characters.find(c=>c.id===inspecting), scene=project.scenes.find(s=>s.id===inspecting);
  if(c){const v=c.versions.find(v=>v.id===c.approved);if(!v)return '';title=v.name;html=views(v.asset)+`<p class="text-block">${esc(v.description)}</p>`;}
- else if(scene?.confirmed){title=scene.title;html=(scene.output?image(scene.output,scene.title,'page')+`<a href="${file(scene.output)}" download="scene.png">${icon('download')}PNGを保存</a>`:'')+renderDownloads((project.exports||[]).filter(e=>e.scenes.includes(scene.id)).flatMap(e=>e.files))+`<p class="text-block">${esc(scene.summary)}</p>`;}
+ else if(scene?.confirmed){title=scene.title;html=sceneSlideshow(scene)+renderDownloads((project.exports||[]).filter(e=>e.scenes.includes(scene.id)).flatMap(e=>e.files))+`<p class="text-block">${esc(scene.summary)}</p>`;}
  else return '';}
  return `<section class="asset-reader" aria-label="確定した設定と素材"><div class="row"><h2>${esc(title)}</h2>${btn('閉じる','close-reader')}</div>${html}<p class="muted">修正や追加は、制作チャットで話しかけてください。確定するまで元の設定は残ります。</p></section>`;}
 function draftCard(context){if(project.chat_engine==='tools-v1')return '';if(context==='world')return project.world_draft&&project.world_draft!==project.world.text&&!project.chats.some(x=>(x.artifacts||[]).some(a=>a.kind==='world'&&a.text===project.world_draft))&&!project.chats.some(x=>x.proposal?.kind==='world'&&x.proposal.text===project.world_draft)?`<div class="card"><h3>${project.world_ready?'世界観の案':'世界観の下書き'}</h3><p>${esc(project.world_draft)}</p><p class="muted">これまで話した内容です。追加・変更したいことも、このチャットで教えてください。</p></div>`:'';
@@ -45,26 +73,29 @@ function draftCard(context){if(project.chat_engine==='tools-v1')return '';if(con
  if(stage==='confirmed'&&c.persona_state==='ready')html+=`<div class="card"><h3>${esc(c.name)}の性格・話し方の案</h3><p>${esc(c.personality)}</p><p>${esc(c.speech)}</p><p class="muted">この案でOKか、変えたい点を教えてください。</p></div>`;
  return html;}
  const s=project.scenes.find(s=>s.id===context);if(!s||s.confirmed)return '';
- return `<div class="card"><h3>${esc(s.title)} · ${esc(catalog.layouts[s.layout])}</h3><p>${s.characters.map(c=>esc(c.name)).join(' / ')}</p><div class="grid">${s.panels.map((p,i)=>`<div class="panel"><h3>${i+1}コマ目</h3>${p.asset?image(p.asset.file,`${i+1}コマ目`):''}<p>${esc(p.direction)}</p><p>${esc(s.characters[p.speaker].name)}「${esc(p.text)}」</p>${p.held?'<p>保持中</p>':''}</div>`).join('')}</div><p>${esc(s.summary)}</p>${s.output?image(s.output,s.title,'page')+'<p>このページでOKか、変えたい点を教えてください。</p>':''}</div>`;
+ return `<div class="card"><h3>${esc(s.title)} · ${esc(catalog.layouts[s.layout])}</h3><p>${s.characters.map(c=>esc(c.name)).join(' / ')}</p><div class="grid">${s.panels.map((p,i)=>`<div class="panel"><h3>${i+1}コマ目</h3>${p.asset?image(p.asset.file,`${i+1}コマ目`):''}<p>${esc(p.direction)}</p>${(p.bubbles||[p]).map(b=>`<p>${esc(s.characters[b.speaker].name)}「${esc(b.text)}」</p>`).join('')}${p.held?'<p>保持中</p>':''}</div>`).join('')}</div><p>${esc(s.summary)}</p>${s.output?image(s.output,s.title,'page')+'<p>このページでOKか、変えたい点を教えてください。</p>':''}</div>`;
 }
-function render(){document.body.classList.remove('character-screen');document.body.classList.toggle('inspect-open',!!inspecting&&!!project&&section!=='account');tree();$('#composer').hidden=true;
- if(accountState?.account&&accountState.account.consent_required&&section!=='account'){renderConsentSetup();return;}
- if(accountState?.account&&!accountState.account.display_name){renderProfileSetup();return;}
+function render(){document.body.classList.remove('character-screen');document.body.classList.toggle('inspect-open',(!!inspecting||helpOpen)&&!!project&&section!=='account');tree();$('#composer').hidden=true;$('#help-toggle').hidden=!project||section==='account';$('#help-toggle').setAttribute('aria-expanded',String(helpOpen&&!inspecting));
+ if(!accountState?.local&&accountState?.account&&accountState.account.consent_required&&section!=='account'){renderConsentSetup();return;}
+ if(!accountState?.local&&accountState?.account&&!accountState.account.display_name){renderProfileSetup();return;}
  if(routeError){$('#breadcrumb').textContent='YourStory';$('#content').innerHTML=heading('YOUR STORY',routeError)+'<a href="/app">アトリエへ戻る</a>';return;}
  if(section==='account'){renderAccount();return;}
  if(!project){$('#breadcrumb').textContent='YourStory / アトリエ';$('#content').innerHTML=heading('YOUR STORY STARTS HERE','どんな漫画をつくりましょう？','世界観も、登場人物も、物語も。一つのチャットから。')+`<label>漫画のタイトル<input id="new-title" class="field" maxlength="80" placeholder="仮のタイトルでも大丈夫"></label>${btn('漫画をはじめる','create','','primary')}`;return;}
  section='studio';const context=project.active_context||project.chats.at(-1)?.context||'world';target=context;
  $('#breadcrumb').textContent=project.title+' / 制作チャット';
- const entries=project.chats.map(x=>`<div class="message user">${esc(x.text)}</div>${assistantMessage(x.reply)}${(x.artifacts||[]).map(a=>renderArtifact(a,x.narrative)).join('')}${x.proposal?.kind==='world'?assistantMessage(x.proposal.text):''}${(x.images||[]).map(p=>image(p,'生成した画像','chat-image')).join('')}`).join('');
- $('#content').innerHTML=assetReader()+`<div class="conversation" role="log" aria-label="漫画の制作チャット">${assistantMessage('どんな世界で、どんな物語を描きたいですか？思いつくところから話してください。決まった設定や画像は保存していきます。')}${entries}</div>`+draftCard(context);
+ const entries=project.chats.map(x=>`<div class="message user">${esc(x.text)}</div>${assistantMessage(x.reply)}${renderConfirmation(x)}${(x.artifacts||[]).map(a=>renderArtifact(a,x.narrative)).join('')}${x.proposal?.kind==='world'?assistantMessage(x.proposal.text):''}${(x.images||[]).map(p=>image(p,'生成した画像','chat-image')).join('')}`).join('');
+ $('#content').innerHTML=(inspecting?assetReader():helpOpen?usageGuide():'')+`<div class="conversation" role="log" aria-label="漫画の制作チャット">${assistantMessage('どんな世界で、どんな物語を描きたいですか？思いつくところから話してください。決まった設定や画像は保存していきます。')}${entries}</div>`+draftCard(context);
  $('#composer').hidden=false;$('#composer').dataset.context='studio';
  if(accountState?.membership.plan==='free'&&!accountState.gemini_key?.configured){$('#composer').hidden=true;$('#content').insertAdjacentHTML('beforeend','<div class="card"><p>制作するには、ご自身のGemini APIキーを登録してください。</p><a href="/app/account">アカウント設定でキーを登録</a></div>');}
- const stamp=project.id+':'+(project.chats.at(-1)?.id||'');if(lastChatRender!==stamp&&!inspecting){lastChatRender=stamp;requestAnimationFrame(()=>window.scrollTo(0,document.documentElement.scrollHeight));}
+ const stamp=project.id+':'+(project.chats.at(-1)?.id||'')+':'+(inspecting||'')+':'+helpOpen;if(lastChatRender!==stamp){lastChatRender=stamp;pinChatBottom();}
  if(project.error)$('#error').textContent=project.error;
 }
 async function edit(op,extra={}){project=await api('/api/project/edit',{id:project.id,revision:project.revision,op,...extra});}
 async function open(id,sec='studio'){project=await api('/api/work/'+id);expanded.add(id);section=sec;target=null;inspecting=null;}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-op]');if(!b)return;const op=b.dataset.op;
+ if(op==='scene-slide'){const scene=project?.scenes.find(s=>s.id===inspecting);if(!scene)return;const count=scene.panels.filter(p=>p.asset).length;if(count<2)return;sceneSlideIndex.set(scene.id,((sceneSlideIndex.get(scene.id)||0)+Number(b.dataset.step)+count)%count);document.querySelector('.asset-reader').outerHTML=assetReader();document.querySelector(`[data-op="scene-slide"][data-step="${b.dataset.step}"]`)?.focus({preventScroll:true});return;}
+ if(op==='toggle-help'){helpOpen=!helpOpen;if(inspecting){helpOpen=true;navigate(routeURL(null));}else render();return;}
+ if(op==='use-example'){if(busy)return;const example=usageExamples[Number(b.dataset.index)];if(!example)return;const input=$('#input');input.value=(input.value.trim()?input.value.trim()+'\n':'')+example[1];input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();return;}
  if(op==='toggle-scenes'){expandedSceneLists.set(b.dataset.id,b.getAttribute('aria-expanded')!=='true');tree();document.querySelector('[data-op="toggle-scenes"][data-id="'+b.dataset.id+'"]')?.focus();return;}
  if(op==='choose-format'){if(busy)return;const f=(catalog.publication_formats||[]).find(x=>x.id===b.dataset.id);if(!f)return;const input=$('#input');input.value=(input.value.trim()?input.value.trim()+'\n':'')+'掲載形式は「'+f.label+'」を希望します。';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();return;}
  if(op==='choose-style'){if(busy)return;const style=(catalog.styles||[]).find(s=>s.id===b.dataset.id);if(!style)return;const input=$('#input');input.value=(input.value.trim()?input.value.trim()+'\n':'')+'絵のテイストは「'+style.label+'」を選びます。';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();return;}
@@ -73,6 +104,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-op]');if(!
  if(['account','nav','inspect','close-reader'].includes(op)){navigate(op==='account'?'/app/account':op==='nav'?YourStoryRouter.path({page:'studio',project:b.dataset.id}):routeURL(op==='inspect'?b.dataset.target:null));return;}
  if(op==='expand'){expanded.has(b.dataset.id)?expanded.delete(b.dataset.id):expanded.add(b.dataset.id);tree();return;}
  run(async()=>{switch(op){
+ case 'confirm-proposal':project=await api('/api/project/confirm',{id:project.id,revision:project.revision,message_id:b.dataset.message});break;
  case 'delete-project':{const id=b.dataset.id;$('#project-dialog').hidePopover();const work=project?.id===id?project:await api('/api/work/'+id);await api('/api/project/delete',{id,revision:work.revision});expanded.delete(id);projectMenu=null;if(project?.id===id){project=null;inspecting=null;target=null;section='studio';writeURL('/app/new',true);}break;}
  case 'inspect':inspecting=b.dataset.target;section='studio';break;
  case 'close-reader':inspecting=null;break;
@@ -116,9 +148,17 @@ document.addEventListener('submit',e=>{
  if(e.target.id==='consent-form'){e.preventDefault();run(async()=>{await api('/api/account/consent',{accepted:$('#consent-accepted').checked});});return;}
  if(e.target.id==='delete-account-form'){e.preventDefault();if(!$('#delete-confirm').checked){$('#error').textContent='削除への同意を確認してください。';return;}if(!window.confirm('アカウントを削除します。続けますか？'))return;run(async()=>{await api('/api/account/delete',{confirmed:true});location.assign('/login');});}
 });
+function renderLocalSettings(a){
+ document.title='設定 | YourStory';
+ const u=a.token_usage,n=v=>v==null?'未取得':Number(v).toLocaleString('ja-JP');
+ $('#breadcrumb').textContent='設定';
+ $('#content').innerHTML=heading('SETTINGS','設定','APIキーと使用したトークン数を確認できます。')+geminiKeyForm(a)+`<section class="card"><h2>使用したトークン</h2><p>入力：${n(u.input_tokens)} ／ 出力：${n(u.output_tokens)} ／ 合計：${n(u.total_tokens)}</p><p class="muted">このPCに記録された全期間の実測値です。出力には思考トークンを含みます。取得できなかった使用量や処理中の見込みは合計に含めません。</p>${u.unreported_calls?`<p>使用量未取得・処理中：${n(u.unreported_calls)}件</p>`:''}<h3>利用履歴（最新100件）</h3>${u.records.length?u.records.map(r=>`<article class="card"><strong>${r.kind==='image'?'画像生成':'会話'}</strong><p>${esc(new Date(r.created*1000).toLocaleString('ja-JP'))} · ${esc(r.model||'モデル不明')}</p><p>入力：${n(r.input_tokens)} ／ 出力：${n(r.output_tokens)} ／ 合計：${n(r.total_tokens)}</p>${r.total_tokens==null?`<p class="muted">${r.status==='reserved'?'処理中':'APIから使用量を取得できませんでした。'}</p>`:''}</article>`).join(''):'<p>まだ利用履歴はありません。</p>'}</section>`;
+}
+
 function renderAccount(){
  $('#composer').hidden=true;$('#breadcrumb').textContent=catalog?.local?'設定':'アカウント / プランと利用状況';
  const a=accountState;if(!a){$('#content').innerHTML='<p>読み込み中…</p>';return;}
+ if(a.local){renderLocalSettings(a);return;}
  const m=a.membership;
  let html=heading('ACCOUNT',catalog?.local?'設定':'アカウントとプラン','表示名と、制作に使うAPIキーを確認・変更できます。');
  if(a.account?.consent_required)html+='<div class="card"><p>FreeのAPIキー方式への変更に伴い、利用規約・プライバシーポリシーを更新しました。制作を続ける前にご確認ください。</p><a href="/app">変更内容を確認して利用を再開</a></div>';

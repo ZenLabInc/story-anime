@@ -26,7 +26,7 @@ class ArtControls(unittest.TestCase):
         self.assertEqual(''.join(''.join(c) for c in manga.columns(text)),text)
         self.assertIn('AI',sum(manga.columns(text),[]));self.assertIn('50',sum(manga.columns(text),[]))
         with self.assertRaises(ValueError):manga.validate_dialogue(chr(0x10ffff))
-        with self.assertRaises(ValueError):manga.validate_dialogue('a'*56)
+        with self.assertRaises(ValueError):manga.validate_dialogue('a'*121)
         self.assertEqual(manga.letter(Image.new('RGB',(500,500)),text).size,(1280,720))
     def test_dialogue_not_given_to_image_model(self):
         work={'characters':[{'name':'ミナ','description':'修理屋'}],'answers':{'story':'雨の町','style':'柔らかな水彩風'}}

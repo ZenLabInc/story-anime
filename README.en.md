@@ -37,7 +37,11 @@ python3 -m venv .venv
 .venv/bin/python -m app.server --local
 ```
 
-Open <http://127.0.0.1:8765/app> in Chrome. Register your own Gemini API key from the account settings, create a manga, and continue through the chat. Google may charge for chat and image-generation requests. Review the current model availability, pricing, and spending limits in Google AI Studio before generating images.
+Open <http://127.0.0.1:8765/app> in Chrome. Register your own Gemini API key from Settings, create a manga, and continue through the chat. Google may charge for chat and image-generation requests. Review the current model availability, pricing, and spending limits in Google AI Studio before generating images.
+
+No login, display-name registration, or onboarding consent screen is required. Settings lists recorded input/output token totals and the latest 100 requests, without plan prices or cost estimates. Unknown usage is excluded from totals.
+
+Explicit generation requests and instructions to keep going do not require repeated confirmation. Approving a front view generates the missing side and back views together, preserving the front image.
 
 ## Local data and privacy
 

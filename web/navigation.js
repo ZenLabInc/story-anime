@@ -25,7 +25,7 @@ async function applyRoute(url,replace=false){
  writeURL(route.page==='missing'?parsedURL.pathname:YourStoryRouter.path(route),replace);
  document.title=section==='account'?'アカウント | YourStory':project?project.title+' | YourStory':'YourStory — 漫画のアトリエ';
  window.dispatchEvent(new Event('yourstory:navigate'));
- window.scrollTo(0,0);
+ if(!project||section!=='studio')window.scrollTo(0,0);
 }
 function navigate(url,replace=false){
  if(busy){queuedNavigation={url,replace};return;}

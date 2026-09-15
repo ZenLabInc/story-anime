@@ -10,6 +10,7 @@ S={'type':'STRING'};B={'type':'BOOLEAN'};I={'type':'INTEGER'}
 STRINGS={'type':'ARRAY','items':S};INDICES={'type':'ARRAY','items':I,'description':'0始まりの番号。1コマ目は0、2コマ目は1。全2コマなら[0,1]。'}
 CHAR={k:S for k in ['name','appearance','personality','speech','background']}
 PANEL={'type':'OBJECT','properties':{'direction':S,'speaker':{'type':'INTEGER','description':'cast配列の0始まりの人物番号'},'text':S,'bubble_side':{'type':'STRING','enum':['right','left']}},'required':['direction','speaker','text','bubble_side']}
+PANEL['properties']['bubbles']={'type':'ARRAY','description':'1〜4吹き出し。各textは120文字以内。指定時はtextは全文連結、speaker/bubble_sideは最初の吹き出しと同じにする。','items':{'type':'OBJECT','properties':{k:PANEL['properties'][k] for k in ['text','speaker','bubble_side']},'required':['text','speaker','bubble_side']}}
 TOOLS=[
  schema('show_publication_formats','用途・掲載先に合わせた完成形式の見本を表示。候補外の掲載先も聞き、対応可能な候補を提案する。'),
  schema('propose_publication','掲載先と完成形式の候補を保存。まだ確定しない。寸法・順序を返答で説明して「この形でよいですか？」と聞く。',{'preset':{'type':'STRING','enum':list(publication.PRESETS)},'destination':S},['preset','destination']),
@@ -30,7 +31,7 @@ TOOLS=[
  schema('set_fixed_lines','ユーザーが原文保持を求めたセリフをシーンに登録する。既存固定は維持。',{'id':S,'lines':STRINGS},['id','lines']),
  schema('release_fixed_lines','ユーザーが明示的に固定解除を求めたセリフだけ解除。既存確定シーンはfork_sceneが必要。',{'id':S,'lines':STRINGS},['id','lines']),
  schema('confirm_scene','以前に提示した画像付きシーンを明示承認で確定。',{'id':S},['id']),
- schema('generate_images','前のAI返答で対象を示して生成してよいか確認し、今回ユーザーが了承した場合だけ生成。確認した返答の履歴IDをconfirmation_idに指定。人物views=0正面/1横/2背面、シーンpanelsは0始まり。',{'id':S,'confirmation_id':S,'panels':INDICES,'views':INDICES},['id','confirmation_id']),
+ schema('generate_images','生成の許可をLLMが会話から判断する。通常はconfirmationと直前confirmation_id。明示の生成依頼・継続委任はuser_requestと利用者の原文instruction。正面承認後の残り方向はfront_approvedと今回の承認原文instruction。人物views=0正面/1横/2背面、シーンpanelsは0始まり。',{'id':S,'confirmation_id':S,'authorization':{'type':'STRING','enum':['confirmation','user_request','front_approved']},'instruction':S,'completion_message':S,'panels':INDICES,'views':INDICES},['id']),
  schema('cancel_generation','見積を取り消す。画像を生成しない。')]
 
 def public_state(p):
@@ -140,7 +141,7 @@ class Toolset:
         if name=='set_fixed_lines':
             scene=w.item(p,'scenes',a['id'])
             if scene['confirmed']:raise ValueError('確定シーンの固定は変更できません。')
-            lines=[w.string(line,55) for line in a['lines']]
+            lines=[w.string(line,120) for line in a['lines']]
             if not lines or any(not line or line not in self.text for line in lines):raise ValueError('今回の発言で指定された原文だけ固定できます。')
             scene['fixed_lines']=list(dict.fromkeys(scene.get('fixed_lines',[])+lines));self.invalidate();return {'fixed_lines':scene['fixed_lines']}
         if name in ['update_scene','hold_panels','confirm_scene']:
@@ -159,12 +160,27 @@ class Toolset:
         if name=='generate_images':
             if not (p.get('art_style') or {}).get('prompt'):raise ValueError('画像生成前に絵のテイストを聞き取り、set_art_styleで保存してください。')
             previous=self.original.get('chats',[])
-            if self.changed or not previous or a['confirmation_id']!=previous[-1]['id']:raise ValueError('前のAI返答で生成対象を確認し、次の発言で了承を得てください。今回変更した案は先に提示してください。')
+            authorization=a.get('authorization','confirmation')
+            if authorization=='confirmation':
+                if self.changed or not previous or a.get('confirmation_id')!=previous[-1]['id']:raise ValueError('前のAI返答で生成対象を確認し、次の発言で了承を得てください。今回変更した案は先に提示してください。')
+            elif authorization in ['user_request','front_approved']:
+                sources=[self.text]+([x.get('text','') for x in previous] if authorization=='user_request' else [])
+                instruction=a.get('instruction','').strip()
+                if not instruction or not any(instruction in source for source in sources):raise ValueError('生成を許可した利用者の発言を原文で指定してください。')
+                if authorization=='front_approved':
+                    original=w.item(self.original,'characters',a['id'])
+                    current=w.item(p,'characters',a['id'])
+                    if not original.get('view_assets',{}).get('front') or original!=current:raise ValueError('提示済みの正面を変更せず使用してください。')
+                    a=dict(a,views=[i for i,key in [(1,'side'),(2,'back')] if key not in current.get('view_assets',{})])
+                    if not a['views']:raise ValueError('横面・背面は生成済みです。')
+            else:raise ValueError('生成許可の種類が不正です。')
             kind='character' if any(c['id']==a['id'] for c in p['characters']) else 'scene'
             q=w.make_quote(p,kind,a['id'],a)
-            q['consent']={'text':self.text,'at':time.time(),'via':'agent_tool','confirmation_id':a['confirmation_id']}
+            completion=w.string(a.get('completion_message',''),1500)
+            if completion:q['completion_message']=completion
+            q['consent']={'text':self.text,'at':time.time(),'via':'agent_tool','confirmation_id':a.get('confirmation_id'),'authorization':authorization,'instruction':a.get('instruction')}
             p['quotes']={q['id']:q};self.execute=q['id']
-            return {'scheduled':True,'status':'回答後に生成開始。まだ画像は完成していません。'}
+            return {'scheduled':True,'image_count':len(q['panels']),'selected_indices':q['panels'],'status':'回答後に対象全枚を生成し、全て成功した後にまとめて画像と完了案内を表示します。まだ画像は完成していません。'}
         if name=='cancel_generation':self.invalidate();return {'cancelled':True}
         raise ValueError('ツールが見つかりません。')
     def update_scene(self,scene,a):
@@ -172,21 +188,24 @@ class Toolset:
         if len(panels)!=count or not ids or any(type(i) is not int or not 0<=i<count for i in ids):raise ValueError('コマ数・変更対象が不正です。')
         validated=[]
         for i,panel in enumerate(panels):
-            manga.validate_dialogue(panel['text'])
-            item={'direction':w.string(panel['direction'],800),'text':w.string(panel['text'],55),'speaker':panel['speaker'],'bubble_side':panel['bubble_side'],'held':False,'asset':None}
+            bubbles=manga.dialogues(panel)
+            if any(not 0<=b['speaker']<len(scene['characters']) for b in bubbles):raise ValueError('吹き出しの話者が不正です。')
+            manga.bubble_layout(bubbles,publication.panel_size(scene))
+            item={'direction':w.string(panel['direction'],800),'text':''.join(b['text'] for b in bubbles),'speaker':panel['speaker'],'bubble_side':panel['bubble_side'],'held':False,'asset':None}
             if type(item['speaker']) is not int or not 0<=item['speaker']<len(scene['characters']) or item['bubble_side'] not in ['right','left']:raise ValueError('話者/吹き出しが不正です。')
+            if 'bubbles' in panel:item['bubbles']=copy.deepcopy(bubbles)
             old=scene['panels'][i] if i<len(scene['panels']) else None
             if old and (old['held'] or i not in ids):
-                if any(item[k]!=old[k] for k in ['direction','text','speaker','bubble_side']):raise ValueError('保持/対象外のコマを変更できません。')
+                if any(item[k]!=old[k] for k in ['direction','text','speaker','bubble_side']) or manga.dialogues(item)!=manga.dialogues(old):raise ValueError('保持/対象外のコマを変更できません。')
                 item=old
             elif old and all(item[k]==old[k] for k in ['direction','speaker']):
                 item['asset']=copy.deepcopy(old['asset'])
-                if item['asset'] and any(item[k]!=old[k] for k in ['text','bubble_side']):
+                if item['asset'] and manga.dialogues(item)!=manga.dialogues(old):
                     dest=w.folder(self.p)/'panel.png'
-                    manga.letter(Image.open(s.DATA/item['asset']['raw']),item['text'],item['bubble_side'],publication.panel_size(scene)).save(dest)
+                    manga.letter_panel(Image.open(s.DATA/item['asset']['raw']),item,publication.panel_size(scene)).save(dest)
                     item['asset']['file']=w.relative(dest)
             validated.append(item)
         if any(not any(line in x['text'] for x in validated) for line in scene.get('fixed_lines',[])):raise ValueError('固定セリフを保持してください。')
         scene.update(title=w.string(a['title'],100),summary=w.string(a['summary'],800),panels=validated,output=None)
         if validated and all(x['asset'] for x in validated):scene['output']=w.assemble(self.p,scene)
-        if scene['output']:self.artifact('image',images=[scene['output']])
+        if scene['output']:self.artifact('image',images=w.scene_preview_images(scene))

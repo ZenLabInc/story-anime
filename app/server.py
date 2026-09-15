@@ -39,6 +39,7 @@ class Handler(BaseHTTPRequestHandler):
         return accounts.authenticate(self.token())
 
     def token(self):
+        if getattr(self.server,'local_mode',False):return self.server.local_token
         c = SimpleCookie(); c.load(self.headers.get('Cookie', ''))
         return c['studio_session'].value if 'studio_session' in c else getattr(self.server,'local_token',None)
 
@@ -109,7 +110,10 @@ class Handler(BaseHTTPRequestHandler):
             user = self.identity()
             if path == '/auth/google/callback':
                 query=parse_qs(urlparse(self.path).query);token,_=accounts.google_finish(query.get('state',[''])[0],query.get('code',[''])[0],self.token(),user['id'],self.base());return self.redirect('/app',token)
-            if path == '/api/account':return self.reply(200, {'account':accounts.profile(user['id']),'consent':accounts.consent_status(user['id']),'auth':accounts.config(),'membership':membership.public_status(user['id']),'billing':billing.state(user['id']),'gemini_key':user_keys.status(user['id'])})
+            if path == '/api/account':
+                if getattr(self.server,'local_mode',False):
+                    return self.reply(200,{'local':True,'account':{'local':True},'membership':{'plan':'free','limits':{'label':'ローカル'}},'token_usage':membership.token_usage(user['id']),'gemini_key':user_keys.status(user['id'])})
+                return self.reply(200, {'account':accounts.profile(user['id']),'consent':accounts.consent_status(user['id']),'auth':accounts.config(),'membership':membership.public_status(user['id']),'billing':billing.state(user['id']),'gemini_key':user_keys.status(user['id'])})
             if membership.ENFORCE:accounts.require(user['id'])
             if path == '/api/projects': return self.reply(200, {'projects':workspace.projects(user['id']),'layouts':{k:v[0] for k,v in workspace.LAYOUTS.items()},'styles':style_catalog.public_styles(),'publication_formats':publication.catalog(),'budget':gemini.budget(),'enabled':gemini.ENABLED,'local':urlparse(self.base()).hostname in ['127.0.0.1','localhost']})
             if path == '/api/state': return self.reply(200, studio.state(user['id']))
@@ -176,6 +180,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path in ['/api/approve','/api/generate'] and studio.read_work(user,b['id']).get('version') != 3: raise ValueError('旧作品の新規生成は停止しました。YourStoryの新しい漫画を作成してください。')
             if self.path == '/api/project/new': result = workspace.create(user, b.get('title',''))
             elif self.path == '/api/project/delete': result = workspace.soft_delete(user,b)
+            elif self.path == '/api/project/confirm':
+                from app.confirmations import accept
+                result=accept(user,b)
             elif self.path == '/api/project/edit': result = workspace.mutate(user,b)
             elif self.path == '/api/project/chat/stream': return self.chat_stream(user,b)
             elif self.path == '/api/project/chat': result = manga_agent.chat(user,b)
