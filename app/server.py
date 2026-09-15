@@ -33,8 +33,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def identity(self):
         if getattr(self.server,'local_mode',False):
-            try:return accounts.authenticate(self.token())
-            except PermissionError:return accounts.authenticate(self.server.local_token)
+            # Personal mode has exactly one local identity. Ignore cookies left by
+            # an earlier hosted/dev session so /app cannot loop through /login.
+            return accounts.authenticate(self.server.local_token)
         return accounts.authenticate(self.token())
 
     def token(self):
