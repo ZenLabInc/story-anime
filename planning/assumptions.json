@@ -1,0 +1,190 @@
+{
+  "as_of": "2026-09-11",
+  "status": "public_example_values_not_company_budget",
+  "currency": "JPY",
+  "usd_jpy": 160,
+  "tax_rate": 0.1,
+  "payment_rate": 0.036,
+  "billing_rate": 0.007,
+  "refund_reserve_rate_net_revenue": 0.01,
+  "provider_overhead_rate": 0.2,
+  "video_usd_per_second": 0.05,
+  "video_billing_block_seconds": 5,
+  "image_usd_each": 0.05,
+  "tts_usd_per_50_characters": 0.01,
+  "lipsync_usd_per_frame": 0.002,
+  "lipsync_fps": 25,
+  "llm_input_usd_per_million": 1,
+  "llm_output_usd_per_million": 5,
+  "free_activation_cost_jpy": 40,
+  "plans": {
+    "starter": {
+      "price_gross": 2980,
+      "video_seconds": 40,
+      "lipsync_seconds": 10,
+      "images": 20,
+      "tts_characters": 1000,
+      "tts_requests": 10,
+      "llm_input_tokens": 10000,
+      "llm_output_tokens": 2000,
+      "storage_delivery_jpy": 15,
+      "render_jpy": 30,
+      "support_jpy": 100
+    },
+    "creator": {
+      "price_gross": 5980,
+      "video_seconds": 120,
+      "lipsync_seconds": 30,
+      "images": 40,
+      "tts_characters": 3000,
+      "tts_requests": 30,
+      "llm_input_tokens": 30000,
+      "llm_output_tokens": 6000,
+      "storage_delivery_jpy": 30,
+      "render_jpy": 60,
+      "support_jpy": 150
+    },
+    "topup": {
+      "price_gross": 2480,
+      "video_seconds": 60,
+      "lipsync_seconds": 15,
+      "images": 20,
+      "tts_characters": 1500,
+      "tts_requests": 15,
+      "llm_input_tokens": 15000,
+      "llm_output_tokens": 3000,
+      "storage_delivery_jpy": 10,
+      "render_jpy": 30,
+      "support_jpy": 20
+    }
+  },
+  "work": {
+    "shot_seconds": [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5
+    ],
+    "images": 18,
+    "spoken_characters_per_attempt": 150,
+    "spoken_requests_per_attempt": 6,
+    "lipsync_seconds_per_attempt": 10,
+    "llm_input_tokens": 10000,
+    "llm_output_tokens": 2000,
+    "render_jpy": 15,
+    "delivery_jpy": 5
+  },
+  "fixed_costs": {
+    "pilot": {
+      "technology": 0,
+      "labor": 0,
+      "acquisition": 0,
+      "free_activations": 0,
+      "other": 0
+    },
+    "growth": {
+      "technology": 0,
+      "labor": 0,
+      "acquisition": 0,
+      "free_activations": 0,
+      "other": 0
+    }
+  },
+  "source_ids": {
+    "video_usd_per_second": "S07",
+    "image_usd_each": "S07",
+    "tts_usd_per_50_characters": "S07",
+    "lipsync_usd_per_frame": "S08",
+    "lipsync_fps": "S08",
+    "llm_input_usd_per_million": "S09",
+    "llm_output_usd_per_million": "S09",
+    "payment_rate": "S10",
+    "billing_rate": "S10"
+  },
+  "studio": {
+    "status": "demo_units_not_selling_price",
+    "initial_credits": 500,
+    "comic_panels": 4,
+    "anime_shots": 6,
+    "shot_seconds": 5,
+    "comic_credits_per_panel": 5,
+    "anime_credits_per_shot": 40,
+    "comic_reference_images": 2,
+    "comic_render_delivery_jpy": 5
+  },
+  "gemini": {
+    "text_model": "gemini-3.6-flash",
+    "image_model": "gemini-3.1-flash-image",
+    "budget_jpy": 2200,
+    "usd_jpy_planning": 180,
+    "safety_multiplier": 1.2,
+    "text_input_usd_million": 0.75,
+    "text_output_usd_million": 3.75,
+    "image_input_usd_million": 0.5,
+    "image_output_usd_million": 60,
+    "text_request_cap_jpy": 10,
+    "image_request_cap_jpy": 60,
+    "image_output_tokens": 4096,
+    "text_output_tokens": 4096
+  },
+  "membership": {
+    "status": "legacy_example_not_for_sale",
+    "free": {
+      "label": "Free",
+      "price_gross": 0,
+      "images": 0,
+      "image_period": "lifetime",
+      "text_calls": 0,
+      "tokens": 0,
+      "cost_cap_jpy": 0,
+      "projects": 1,
+      "monthly_budget_usd": 0,
+      "generation_source": "user_key"
+    },
+    "plus": {
+      "label": "Plus",
+      "price_gross": 1480,
+      "images": 24,
+      "image_period": "month",
+      "text_calls": 200,
+      "tokens": 500000,
+      "cost_cap_jpy": 600,
+      "projects": 20,
+      "monthly_budget_usd": 3.35
+    },
+    "pro": {
+      "label": "Pro",
+      "price_gross": 9800,
+      "images": 240,
+      "image_period": "month",
+      "text_calls": 2000,
+      "tokens": 6000000,
+      "cost_cap_jpy": 5500,
+      "projects": 300,
+      "monthly_budget_usd": 30.6
+    },
+    "economics": {
+      "image_sample_jpy": 17.45,
+      "text_sample_jpy": 0.51,
+      "support_storage_jpy": {
+        "free": 5,
+        "plus": 100,
+        "pro": 400
+      },
+      "aws_monthly_budget_proposal_jpy": 3000
+    },
+    "usage_model": "free_user_key_paid_pooled_monthly_usd"
+  },
+  "character_generation": {
+    "method": "front_reference_three_images",
+    "views": [
+      "front",
+      "side",
+      "back"
+    ],
+    "image_requests_per_character": 3,
+    "reference": "front_for_side_and_back"
+  }
+}

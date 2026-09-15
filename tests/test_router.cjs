@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict');
+const {parse,path}=require('../web/router.js');
+for(const route of [{page:'account'},{page:'new'},{page:'studio',project:'abc123',material:null},{page:'studio',project:'abc123',material:'world'},{page:'studio',project:'abc123',material:'c1'}])assert.deepEqual(parse(path(route)),route);
+for(const url of ['/app/not-found','/app/manga','/app/manga/a/materials','/app/manga/a/../../account','https://evil.test','//evil.test'])assert.equal(parse(url).page,'missing');
+assert.equal(parse('/app').page,'home');
+console.log('Route grammar tests passed');
+const vm=require('node:vm'),fs=require('node:fs');
+(async()=>{
+ const elements={'#input':{value:''},'#project-dialog':{hidePopover(){}}};
+ const location={origin:'https://yourstory.example.test',pathname:'/app',search:''};
+ const historyCalls=[];
+ const setURL=(type,_,__,url)=>{historyCalls.push({type,url});location.pathname=url;location.search='';};
+ const context=vm.createContext({YourStoryRouter:{parse,path},URL,Map,Event,console,location,history:{pushState:setURL.bind(null,'push'),replaceState:setURL.bind(null,'replace')},document:{addEventListener(){}},window:{addEventListener(){},dispatchEvent(){},scrollTo(){}},$:selector=>elements[selector],project:null,section:'home',inspecting:null,busy:false,catalog:{projects:[{id:'abc'}]},expanded:new Set(),api:async url=>{if(url.endsWith('gone'))throw Error('deleted');return {id:'abc',title:'作品',version:4,world:{text:'世界観'},characters:[],scenes:[]};},run:async fn=>fn()});
+ vm.runInContext(fs.readFileSync('web/navigation.js','utf8'),context);
+ await vm.runInContext("applyRoute('/app/manga/abc/materials/world',true)",context);
+ assert.equal(context.inspecting,'world');assert.equal(location.pathname,'/app/manga/abc/materials/world');
+ elements['#input'].value='書きかけ';
+ await vm.runInContext("applyRoute('/app/account')",context);assert.equal(context.section,'account');
+ await vm.runInContext("applyRoute('/app/manga/abc',true)",context);assert.equal(elements['#input'].value,'書きかけ');assert.equal(context.inspecting,null);
+ await vm.runInContext("applyRoute('/app/manga/gone',true)",context);assert.equal(context.section,'missing');assert.equal(context.project,null);
+ assert.equal(historyCalls.at(-1).type,'replace');
+ console.log('Navigation restoration and unavailable-page tests passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

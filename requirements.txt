@@ -1,0 +1,7 @@
+Pillow==12.3.0
+google-auth==2.58.0
+requests==2.34.2
+
+stripe==15.6.0
+
+cryptography==50.0.1
